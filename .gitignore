@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+._*
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode
+DerivedData/
+*.xcworkspace
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcuserstate
+
+# Local build outputs
+dist/
+outputs/
+work/
+
+# Local planning notes
+PLAN.md
+
+# Code signing / archives
+*.dSYM/
+*.xcarchive/
+*.ipa
+
+# Logs
+*.log
