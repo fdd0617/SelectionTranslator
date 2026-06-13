@@ -11,6 +11,7 @@ let package = Package(
         .executable(name: "SelectionTranslator", targets: ["SelectionTranslator"])
     ],
     targets: [
-        .executableTarget(name: "SelectionTranslator")
+        .executableTarget(name: "SelectionTranslator"),
+        .testTarget(name: "SelectionTranslatorTests", dependencies: ["SelectionTranslator"])
     ]
 )

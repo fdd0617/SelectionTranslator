@@ -26,11 +26,11 @@ final class SelectionMonitor {
     private func handle(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
-            mouseDownLocation = event.locationInWindow
+            mouseDownLocation = NSEvent.mouseLocation
             didDrag = false
         case .leftMouseDragged:
             guard let mouseDownLocation else { return }
-            if distance(from: mouseDownLocation, to: event.locationInWindow) >= 8 {
+            if distance(from: mouseDownLocation, to: NSEvent.mouseLocation) >= 8 {
                 didDrag = true
             }
         case .leftMouseUp:

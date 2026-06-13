@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindowController: SettingsWindowController?
     private var hotKeyManager: HotKeyManager?
     private var selectionMonitor: SelectionMonitor?
+    private var translationTask: Task<Void, Never>?
+    private var requestCounter = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ApplicationMenu.install()
@@ -43,8 +45,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func translateSelection(isAutomatic: Bool = false) {
-        Task { @MainActor in
-            guard selectionReader.isAccessibilityTrusted(prompt: true) else {
+        translationTask?.cancel()
+        requestCounter += 1
+        let requestID = requestCounter
+
+        translationTask = Task { @MainActor in
+            guard selectionReader.isAccessibilityTrusted(prompt: !isAutomatic) else {
                 if isAutomatic { return }
                 panelController.showError(
                     message: "无法读取选区",
@@ -68,7 +74,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             do {
                 let selectedText = try await selectionReader.readSelectedText()
+                try Task.checkCancellation()
+
                 guard SelectionContentFilter.shouldTranslate(selectedText) else {
+                    return
+                }
+
+                let apiURL = UserDefaults.standard.string(forKey: SettingsKeys.apiURL) ?? OpenAITranslator.defaultAPIURL
+                let model = UserDefaults.standard.string(forKey: SettingsKeys.model) ?? OpenAITranslator.defaultModel
+                let cacheKey = TranslationCache.key(text: selectedText, apiURL: apiURL, model: model)
+
+                if let cachedText = await TranslationCache.shared.value(for: cacheKey), isCurrentRequest(requestID) {
+                    panelController.showTranslation(
+                        translation: cachedText,
+                        original: selectedText,
+                        onRetry: { [weak self] in self?.translateSelection() }
+                    )
                     return
                 }
 
@@ -76,10 +97,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 let translatedText = try await translator.translateToChinese(
                     selectedText,
-                    apiURL: UserDefaults.standard.string(forKey: SettingsKeys.apiURL) ?? OpenAITranslator.defaultAPIURL,
+                    apiURL: apiURL,
                     apiKey: apiKey,
-                    model: UserDefaults.standard.string(forKey: SettingsKeys.model) ?? OpenAITranslator.defaultModel
+                    model: model
                 )
+                try Task.checkCancellation()
+                guard isCurrentRequest(requestID) else { return }
+
+                await TranslationCache.shared.store(translatedText, for: cacheKey)
 
                 panelController.showTranslation(
                     translation: translatedText,
@@ -87,9 +112,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     onRetry: { [weak self] in self?.translateSelection() }
                 )
             } catch {
+                if error is CancellationError {
+                    return
+                }
+
                 if case SelectionReaderError.noSelectedText = error {
                     return
                 }
+
+                guard isCurrentRequest(requestID) else { return }
 
                 panelController.showError(
                     message: "翻译失败",
@@ -99,6 +130,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
         }
+    }
+
+    private func isCurrentRequest(_ requestID: Int) -> Bool {
+        requestID == requestCounter && translationTask?.isCancelled == false
     }
 
     private func showSettings() {

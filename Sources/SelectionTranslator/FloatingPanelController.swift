@@ -60,6 +60,9 @@ final class FloatingPanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.backgroundColor = .clear
         panel.isOpaque = false
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
 
         return panel
     }
@@ -121,7 +124,7 @@ final class FloatingPanelController {
 
     private func handleGlobalClick(_ event: NSEvent) {
         guard let panel, panel.isVisible else { return }
-        if panel.frame.contains(event.locationInWindow) {
+        if panel.frame.contains(NSEvent.mouseLocation) {
             cancelAutoCloseAfterClick()
         }
     }
@@ -208,6 +211,17 @@ struct TranslationPanelView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
+                    .background(Color.primary.opacity(0.08), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.escape, modifiers: [])
+            .help("关闭")
+
             ZStack {
                 Circle()
                     .fill(Color.accentColor.opacity(0.16))
@@ -226,16 +240,6 @@ struct TranslationPanelView: View {
             }
 
             Spacer()
-
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .frame(width: 26, height: 26)
-                    .background(Color.primary.opacity(0.08), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.escape, modifiers: [])
-            .help("关闭")
         }
     }
 
