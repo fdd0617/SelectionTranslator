@@ -2,6 +2,7 @@ import Foundation
 
 enum OpenAITranslatorError: LocalizedError {
     case invalidURL(String)
+    case insecureURL(String)
     case invalidResponse
     case networkError(String)
     case apiError(String)
@@ -11,6 +12,8 @@ enum OpenAITranslatorError: LocalizedError {
         switch self {
         case .invalidURL(let value):
             return "API URL 无效：\(value)"
+        case .insecureURL(let value):
+            return "API URL 必须使用 HTTPS：\(value)"
         case .invalidResponse:
             return "OpenAI 返回了无法识别的响应。"
         case .networkError(let message):
@@ -67,7 +70,7 @@ final class OpenAITranslator {
     }
 
     func translateToChinese(_ text: String, apiURL: String, apiKey: String, model: String) async throws -> String {
-        let url = try chatCompletionsURL(from: apiURL)
+        let url = try APIEndpointValidator.normalizedChatCompletionsURL(from: apiURL)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -140,23 +143,6 @@ final class OpenAITranslator {
         }
 
         return content
-    }
-
-    private func chatCompletionsURL(from value: String) throws -> URL {
-        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard var components = URLComponents(string: trimmedValue), let scheme = components.scheme, !scheme.isEmpty, components.host != nil else {
-            throw OpenAITranslatorError.invalidURL(trimmedValue)
-        }
-
-        let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if !path.hasSuffix("chat/completions") {
-            components.path = "/" + ([path, "chat/completions"].filter { !$0.isEmpty }.joined(separator: "/"))
-        }
-
-        guard let url = components.url else {
-            throw OpenAITranslatorError.invalidURL(trimmedValue)
-        }
-        return url
     }
 
     private func networkErrorMessage(for error: URLError, url: URL) -> String {

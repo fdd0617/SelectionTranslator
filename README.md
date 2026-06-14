@@ -1,15 +1,16 @@
 # Selection Translator
 
-macOS 全局划词翻译 MVP。按住鼠标左键拖选文本并松开后，应用会临时执行复制、恢复原剪贴板、调用翻译 API，并在鼠标附近显示中文浮窗。也可以按 `⌥ Space` 手动翻译当前选区。
+macOS 全局划词翻译 MVP。选中文本后可以按 `⌥ Space` 手动翻译当前选区；也可以在设置页显式开启自动划词翻译。翻译时应用会临时执行复制、恢复原剪贴板、调用翻译 API，并在鼠标附近显示中文浮窗。
 
 ## 功能
 
 - 菜单栏常驻入口
-- 鼠标左键拖选后自动翻译
+- 鼠标左键拖选后自动翻译，默认关闭，需要在设置页显式开启
 - `⌥ Space` 全局快捷键
 - 临时读取选区并恢复原剪贴板
 - 默认忽略空白、纯中文、纯数字、网址、长字母数字串和目录路径选区
-- 兼容 OpenAI Chat Completions 的 API 翻译为简体中文，可配置中转站 URL
+- 默认限制选区最多 2000 个字符，避免误发大段内容
+- 兼容 OpenAI Chat Completions 的 API 翻译为简体中文，可配置 HTTPS 中转站 URL
 - API Key 保存到 macOS Keychain
 - 鼠标附近浮窗显示译文，可展开原文、复制译文、重试
 - 浮窗错误提示：未配置 API Key、未授权辅助功能、未检测到选区、请求失败
@@ -25,13 +26,14 @@ swift run SelectionTranslator
 
 首次运行后，在菜单栏打开 `设置...`：
 
-1. 填入 API URL。默认是 `https://api.openai.com/v1/chat/completions`。使用中转站时可以填 base URL，例如 `https://your-api.example.com/v1`，应用会自动补成 `/chat/completions`。
+1. 填入 API URL。默认是 `https://api.openai.com/v1/chat/completions`。使用中转站时可以填 HTTPS base URL，例如 `https://your-api.example.com/v1`，应用会自动补成 `/chat/completions`。
 2. 填入 API Key。
 3. 保留默认模型 `gpt-4.1-mini`，或改成你的可用模型。
-4. 点击保存。
-5. 点击 `检查辅助功能权限`，在系统设置里允许本工具控制电脑。
+4. 如需拖选后自动翻译，显式开启 `自动划词翻译`。开启后，选中文本会发送到配置的 API 服务。
+5. 点击保存。
+6. 点击 `检查辅助功能权限`，在系统设置里允许本工具控制电脑。
 
-之后在任意 App 中按住鼠标左键拖选可复制的英文文本，松开后会自动翻译。也可以选中文本后按 `⌥ Space` 手动翻译。
+之后选中文本并按 `⌥ Space` 可手动翻译。若已开启自动划词翻译，在任意 App 中按住鼠标左键拖选可复制的英文文本，松开后会自动翻译。
 
 ## 打包成 `.app`
 

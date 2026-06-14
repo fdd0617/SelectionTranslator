@@ -6,7 +6,7 @@ final class SettingsWindowController: NSWindowController {
     init(keychain: KeychainStore) {
         let rootView = SettingsView(keychain: keychain)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 500),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -28,6 +28,7 @@ struct SettingsView: View {
     @State private var apiURL: String = UserDefaults.standard.string(forKey: SettingsKeys.apiURL) ?? OpenAITranslator.defaultAPIURL
     @State private var apiKey: String = ""
     @State private var model: String = UserDefaults.standard.string(forKey: SettingsKeys.model) ?? OpenAITranslator.defaultModel
+    @State private var automaticTranslationEnabled: Bool = UserDefaults.standard.bool(forKey: SettingsKeys.automaticTranslationEnabled)
     @State private var status: String = ""
     @State private var isTestingConnection = false
 
@@ -68,6 +69,16 @@ struct SettingsView: View {
                 SettingsField(title: "Model", subtitle: "填写中转站支持的模型名") {
                     TextField("gpt-4.1-mini", text: $model)
                         .textFieldStyle(.roundedBorder)
+                }
+
+                SettingsField(title: "自动划词翻译", subtitle: "默认关闭，开启后拖选文本会发送到配置的 API") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("拖选文本后自动翻译", isOn: $automaticTranslationEnabled)
+                            .toggleStyle(.switch)
+                        Text("建议只在信任当前应用和 API 服务时开启；手动翻译快捷键 ⌥ Space 不受此开关影响。")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding(16)
@@ -119,7 +130,7 @@ struct SettingsView: View {
             Spacer(minLength: 0)
         }
         .padding(24)
-        .frame(width: 620, height: 420)
+        .frame(width: 620, height: 500)
         .background {
             LinearGradient(
                 colors: [Color.primary.opacity(0.04), Color.accentColor.opacity(0.06)],
@@ -136,11 +147,12 @@ struct SettingsView: View {
         do {
             let trimmedAPIURL = apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard validate(apiURL: trimmedAPIURL, model: trimmedModel) else { return }
+            guard let normalizedAPIURL = validatedAPIURLString(apiURL: trimmedAPIURL, model: trimmedModel) else { return }
 
             try keychain.saveAPIKey(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
-            UserDefaults.standard.set(normalizedAPIURL(trimmedAPIURL), forKey: SettingsKeys.apiURL)
+            UserDefaults.standard.set(normalizedAPIURL, forKey: SettingsKeys.apiURL)
             UserDefaults.standard.set(trimmedModel, forKey: SettingsKeys.model)
+            UserDefaults.standard.set(automaticTranslationEnabled, forKey: SettingsKeys.automaticTranslationEnabled)
             status = "已保存"
         } catch {
             status = error.localizedDescription
@@ -156,7 +168,7 @@ struct SettingsView: View {
         let trimmedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard validate(apiURL: trimmedAPIURL, model: trimmedModel) else { return }
+        guard let normalizedAPIURL = validatedAPIURLString(apiURL: trimmedAPIURL, model: trimmedModel) else { return }
         guard !trimmedAPIKey.isEmpty else {
             status = "API Key 不能为空"
             return
@@ -170,7 +182,7 @@ struct SettingsView: View {
                 let translator = OpenAITranslator()
                 _ = try await translator.translateToChinese(
                     "Hello, this is a connection test.",
-                    apiURL: normalizedAPIURL(trimmedAPIURL),
+                    apiURL: normalizedAPIURL,
                     apiKey: trimmedAPIKey,
                     model: trimmedModel
                 )
@@ -182,29 +194,18 @@ struct SettingsView: View {
         }
     }
 
-    private func validate(apiURL: String, model: String) -> Bool {
-        guard URL(string: apiURL)?.host != nil else {
-            status = "API URL 无效"
-            return false
-        }
+    private func validatedAPIURLString(apiURL: String, model: String) -> String? {
         guard !model.isEmpty else {
             status = "Model 不能为空"
-            return false
-        }
-        return true
-    }
-
-    private func normalizedAPIURL(_ value: String) -> String {
-        guard var components = URLComponents(string: value) else {
-            return value
+            return nil
         }
 
-        let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if !path.hasSuffix("chat/completions") {
-            components.path = "/" + ([path, "chat/completions"].filter { !$0.isEmpty }.joined(separator: "/"))
+        do {
+            return try APIEndpointValidator.normalizedChatCompletionsURLString(from: apiURL)
+        } catch {
+            status = error.localizedDescription
+            return nil
         }
-
-        return components.string ?? value
     }
 }
 

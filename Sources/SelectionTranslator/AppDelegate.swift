@@ -45,6 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func translateSelection(isAutomatic: Bool = false) {
+        if isAutomatic, !UserDefaults.standard.bool(forKey: SettingsKeys.automaticTranslationEnabled) {
+            return
+        }
+
         translationTask?.cancel()
         requestCounter += 1
         let requestID = requestCounter
@@ -75,6 +79,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let selectedText = try await selectionReader.readSelectedText()
                 try Task.checkCancellation()
+
+                guard SelectionContentFilter.isWithinLengthLimit(selectedText) else {
+                    if !isAutomatic {
+                        let characterCount = selectedText.trimmingCharacters(in: .whitespacesAndNewlines).count
+                        panelController.showError(
+                            message: "选区过长",
+                            detail: "当前选区约 \(characterCount) 个字符，最多支持 \(SelectionContentFilter.maximumTextLength) 个字符。请缩短选区后重试。",
+                            actionTitle: nil,
+                            action: nil
+                        )
+                    }
+                    return
+                }
 
                 guard SelectionContentFilter.shouldTranslate(selectedText) else {
                     return
