@@ -31,4 +31,26 @@ enum APIEndpointValidator {
     static func normalizedChatCompletionsURLString(from value: String) throws -> String {
         try normalizedChatCompletionsURL(from: value).absoluteString
     }
+
+    static func normalizedOpenAIModelsURL(from value: String) throws -> URL {
+        let chatURL = try normalizedChatCompletionsURL(from: value)
+        guard var components = URLComponents(url: chatURL, resolvingAgainstBaseURL: false) else {
+            throw OpenAITranslatorError.invalidURL(value)
+        }
+
+        var pathComponents = components.path
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+
+        if pathComponents.suffix(2) == ["chat", "completions"] {
+            pathComponents.removeLast(2)
+        }
+        pathComponents.append("models")
+        components.path = "/" + pathComponents.joined(separator: "/")
+
+        guard let url = components.url else {
+            throw OpenAITranslatorError.invalidURL(value)
+        }
+        return url
+    }
 }

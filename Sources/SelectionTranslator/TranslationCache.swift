@@ -35,14 +35,14 @@ actor TranslationCache {
         pruneIfNeeded()
     }
 
-    static func key(text: String, apiURL: String, model: String) -> String {
+    static func key(text: String, provider: TranslationProvider, apiURL: String, model: String) -> String {
         let normalizedText = text
             .split(whereSeparator: { $0.isWhitespace })
             .joined(separator: " ")
         let normalizedAPIURL = apiURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        return [normalizedAPIURL, normalizedModel, normalizedText].joined(separator: "\u{1F}")
+        return [provider.rawValue, normalizedAPIURL, normalizedModel, normalizedText].joined(separator: "\u{1F}")
     }
 
     private func pruneIfNeeded() {

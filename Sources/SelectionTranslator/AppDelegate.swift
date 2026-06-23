@@ -5,7 +5,8 @@ import Carbon.HIToolbox
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let keychain = KeychainStore()
     private let selectionReader = SelectionReader()
-    private let translator = OpenAITranslator()
+    private let openAITranslator = OpenAITranslator()
+    private let anthropicTranslator = AnthropicTranslator()
     private let panelController = FloatingPanelController()
     private var menuBarController: MenuBarController?
     private var settingsWindowController: SettingsWindowController?
@@ -44,8 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = selectionReader.isAccessibilityTrusted(prompt: false)
     }
 
-    private func translateSelection(isAutomatic: Bool = false) {
-        if isAutomatic, !UserDefaults.standard.bool(forKey: SettingsKeys.automaticTranslationEnabled) {
+    private func translateSelection(isAutomatic: Bool = false, textToTranslate: String? = nil) {
+        if isAutomatic, textToTranslate == nil, !UserDefaults.standard.bool(forKey: SettingsKeys.automaticTranslationEnabled) {
             return
         }
 
@@ -54,18 +55,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let requestID = requestCounter
 
         translationTask = Task { @MainActor in
-            guard selectionReader.isAccessibilityTrusted(prompt: !isAutomatic) else {
-                if isAutomatic { return }
-                panelController.showError(
-                    message: "无法读取选区",
-                    detail: "请在系统设置中允许辅助功能权限。",
-                    actionTitle: "重新检查",
-                    action: { [weak self] in self?.requestAccessibilityPermission() }
-                )
-                return
+            if textToTranslate == nil {
+                guard selectionReader.isAccessibilityTrusted(prompt: !isAutomatic) else {
+                    if isAutomatic { return }
+                    panelController.showError(
+                        message: "无法读取选区",
+                        detail: "请在系统设置中允许辅助功能权限。",
+                        actionTitle: "重新检查",
+                        action: { [weak self] in self?.requestAccessibilityPermission() }
+                    )
+                    return
+                }
             }
 
-            guard let apiKey = keychain.readAPIKey(), !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let provider = TranslationProvider.savedValue()
+
+            guard let apiKey = keychain.readAPIKey(for: provider), !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 if isAutomatic { return }
                 panelController.showError(
                     message: "请先配置 API Key",
@@ -76,8 +81,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
+            var retryText = textToTranslate
+
             do {
-                let selectedText = try await selectionReader.readSelectedText()
+                let selectedText: String
+                if let textToTranslate {
+                    selectedText = textToTranslate
+                } else {
+                    selectedText = try await selectionReader.readSelectedText()
+                    retryText = selectedText
+                }
                 try Task.checkCancellation()
 
                 guard SelectionContentFilter.isWithinLengthLimit(selectedText) else {
@@ -97,27 +110,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                let apiURL = UserDefaults.standard.string(forKey: SettingsKeys.apiURL) ?? OpenAITranslator.defaultAPIURL
-                let model = UserDefaults.standard.string(forKey: SettingsKeys.model) ?? OpenAITranslator.defaultModel
-                let cacheKey = TranslationCache.key(text: selectedText, apiURL: apiURL, model: model)
+                let apiURL = savedAPIURL(for: provider)
+                let model = savedModel(for: provider)
+                let cacheKey = TranslationCache.key(text: selectedText, provider: provider, apiURL: apiURL, model: model)
 
                 if let cachedText = await TranslationCache.shared.value(for: cacheKey), isCurrentRequest(requestID) {
                     panelController.showTranslation(
                         translation: cachedText,
                         original: selectedText,
-                        onRetry: { [weak self] in self?.translateSelection() }
+                        onRetry: { [weak self] in self?.translateSelection(textToTranslate: selectedText) }
                     )
                     return
                 }
 
                 panelController.showLoading(message: "正在翻译...")
 
-                let translatedText = try await translator.translateToChinese(
-                    selectedText,
-                    apiURL: apiURL,
-                    apiKey: apiKey,
-                    model: model
-                )
+                let translatedText: String
+                switch provider {
+                case .openAICompatible:
+                    translatedText = try await openAITranslator.translateToChinese(
+                        selectedText,
+                        apiURL: apiURL,
+                        apiKey: apiKey,
+                        model: model
+                    )
+                case .anthropicNative:
+                    translatedText = try await anthropicTranslator.translateToChinese(
+                        selectedText,
+                        apiURL: apiURL,
+                        apiKey: apiKey,
+                        model: model
+                    )
+                }
                 try Task.checkCancellation()
                 guard isCurrentRequest(requestID) else { return }
 
@@ -126,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 panelController.showTranslation(
                     translation: translatedText,
                     original: selectedText,
-                    onRetry: { [weak self] in self?.translateSelection() }
+                    onRetry: { [weak self] in self?.translateSelection(textToTranslate: selectedText) }
                 )
             } catch {
                 if error is CancellationError {
@@ -139,11 +163,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 guard isCurrentRequest(requestID) else { return }
 
+                let retryAction: () -> Void
+                if let retryText {
+                    retryAction = { [weak self] in self?.translateSelection(textToTranslate: retryText) }
+                } else {
+                    retryAction = { [weak self] in self?.translateSelection() }
+                }
+
                 panelController.showError(
                     message: "翻译失败",
                     detail: error.localizedDescription,
                     actionTitle: "重试",
-                    action: { [weak self] in self?.translateSelection() }
+                    action: retryAction
                 )
             }
         }
@@ -151,6 +182,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func isCurrentRequest(_ requestID: Int) -> Bool {
         requestID == requestCounter && translationTask?.isCancelled == false
+    }
+
+    private func savedAPIURL(for provider: TranslationProvider) -> String {
+        UserDefaults.standard.string(forKey: SettingsKeys.apiURL(for: provider))
+            ?? legacySavedValue(for: provider, key: SettingsKeys.apiURL)
+            ?? provider.defaultAPIURL
+    }
+
+    private func savedModel(for provider: TranslationProvider) -> String {
+        UserDefaults.standard.string(forKey: SettingsKeys.model(for: provider))
+            ?? legacySavedValue(for: provider, key: SettingsKeys.model)
+            ?? provider.defaultModel
+    }
+
+    private func legacySavedValue(for provider: TranslationProvider, key: String) -> String? {
+        guard TranslationProvider.savedValue() == provider else {
+            return nil
+        }
+        return UserDefaults.standard.string(forKey: key)
     }
 
     private func showSettings() {

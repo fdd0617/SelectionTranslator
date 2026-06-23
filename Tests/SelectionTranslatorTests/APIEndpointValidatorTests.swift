@@ -29,4 +29,28 @@ final class APIEndpointValidatorTests: XCTestCase {
             }
         }
     }
+
+    func testNormalizesOpenAIModelsEndpointFromBaseURL() throws {
+        let url = try APIEndpointValidator.normalizedOpenAIModelsURL(from: "https://api.example.com/v1")
+
+        XCTAssertEqual(url.absoluteString, "https://api.example.com/v1/models")
+    }
+
+    func testNormalizesOpenAIModelsEndpointFromChatCompletionsURL() throws {
+        let url = try APIEndpointValidator.normalizedOpenAIModelsURL(from: "https://api.example.com/v1/chat/completions")
+
+        XCTAssertEqual(url.absoluteString, "https://api.example.com/v1/models")
+    }
+
+    func testNormalizesAnthropicModelsEndpointFromBaseURL() throws {
+        let url = try AnthropicTranslator.normalizedModelsURL(from: "https://api.anthropic.com/v1")
+
+        XCTAssertEqual(url.absoluteString, "https://api.anthropic.com/v1/models")
+    }
+
+    func testNormalizesAnthropicModelsEndpointFromMessagesURL() throws {
+        let url = try AnthropicTranslator.normalizedModelsURL(from: "https://api.anthropic.com/v1/messages")
+
+        XCTAssertEqual(url.absoluteString, "https://api.anthropic.com/v1/models")
+    }
 }

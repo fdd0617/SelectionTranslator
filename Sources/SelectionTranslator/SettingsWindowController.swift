@@ -6,7 +6,7 @@ final class SettingsWindowController: NSWindowController {
     init(keychain: KeychainStore) {
         let rootView = SettingsView(keychain: keychain)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 660, height: 560),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -24,10 +24,15 @@ final class SettingsWindowController: NSWindowController {
 
 struct SettingsView: View {
     let keychain: KeychainStore
+    private let modelCatalog = ModelCatalog()
 
-    @State private var apiURL: String = UserDefaults.standard.string(forKey: SettingsKeys.apiURL) ?? OpenAITranslator.defaultAPIURL
+    @State private var provider: TranslationProvider = TranslationProvider.savedValue()
+    @State private var apiURL: String = SettingsView.savedAPIURL(for: TranslationProvider.savedValue())
     @State private var apiKey: String = ""
-    @State private var model: String = UserDefaults.standard.string(forKey: SettingsKeys.model) ?? OpenAITranslator.defaultModel
+    @State private var model: String = SettingsView.savedModel(for: TranslationProvider.savedValue())
+    @State private var availableModels: [ModelInfo] = []
+    @State private var isFetchingModels = false
+    @State private var modelFetchCounter = 0
     @State private var automaticTranslationEnabled: Bool = UserDefaults.standard.bool(forKey: SettingsKeys.automaticTranslationEnabled)
     @State private var status: String = ""
     @State private var isTestingConnection = false
@@ -47,7 +52,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Selection Translator")
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    Text("配置兼容 OpenAI 的中转站、模型和系统权限")
+                    Text("配置翻译 Provider、模型和系统权限")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
@@ -56,8 +61,21 @@ struct SettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                SettingsField(title: "API URL / Base URL", subtitle: "可填写 /v1，保存时会自动补全 /chat/completions") {
-                    TextField("https://api.openai.com/v1", text: $apiURL)
+                SettingsField(title: "Provider", subtitle: "选择 API 协议") {
+                    Picker("", selection: $provider) {
+                        ForEach(TranslationProvider.allCases) { provider in
+                            Text(provider.displayName).tag(provider)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .onChange(of: provider) { newProvider in
+                        loadSettings(for: newProvider)
+                    }
+                }
+
+                SettingsField(title: "API URL / Base URL", subtitle: providerURLSubtitle) {
+                    TextField(provider.defaultAPIURL, text: $apiURL)
                         .textFieldStyle(.roundedBorder)
                 }
 
@@ -66,9 +84,37 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                 }
 
-                SettingsField(title: "Model", subtitle: "填写中转站支持的模型名") {
-                    TextField("gpt-4.1-mini", text: $model)
-                        .textFieldStyle(.roundedBorder)
+                SettingsField(title: "Model", subtitle: providerModelSubtitle) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            if availableModels.isEmpty {
+                                TextField(provider.defaultModel, text: $model)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                Picker("", selection: $model) {
+                                    ForEach(availableModels) { model in
+                                        Text(model.displayName).tag(model.id)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .labelsHidden()
+                            }
+
+                            Button {
+                                fetchModels()
+                            } label: {
+                                Label(isFetchingModels ? "获取中" : "获取模型", systemImage: isFetchingModels ? "hourglass" : "arrow.clockwise")
+                            }
+                            .buttonStyle(SettingsSecondaryButtonStyle())
+                            .disabled(isFetchingModels)
+                        }
+
+                        if availableModels.isEmpty {
+                            Text("如果服务不支持模型列表，可以手动输入模型名。")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 SettingsField(title: "自动划词翻译", subtitle: "默认关闭，开启后拖选文本会发送到配置的 API") {
@@ -130,7 +176,7 @@ struct SettingsView: View {
             Spacer(minLength: 0)
         }
         .padding(24)
-        .frame(width: 620, height: 500)
+        .frame(width: 660, height: 560)
         .background {
             LinearGradient(
                 colors: [Color.primary.opacity(0.04), Color.accentColor.opacity(0.06)],
@@ -139,7 +185,7 @@ struct SettingsView: View {
             )
         }
         .onAppear {
-            apiKey = keychain.readAPIKey() ?? ""
+            loadSettings(for: provider)
         }
     }
 
@@ -149,9 +195,10 @@ struct SettingsView: View {
             let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let normalizedAPIURL = validatedAPIURLString(apiURL: trimmedAPIURL, model: trimmedModel) else { return }
 
-            try keychain.saveAPIKey(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
-            UserDefaults.standard.set(normalizedAPIURL, forKey: SettingsKeys.apiURL)
-            UserDefaults.standard.set(trimmedModel, forKey: SettingsKeys.model)
+            try keychain.saveAPIKey(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: provider)
+            UserDefaults.standard.set(normalizedAPIURL, forKey: SettingsKeys.apiURL(for: provider))
+            UserDefaults.standard.set(trimmedModel, forKey: SettingsKeys.model(for: provider))
+            UserDefaults.standard.set(provider.rawValue, forKey: SettingsKeys.provider)
             UserDefaults.standard.set(automaticTranslationEnabled, forKey: SettingsKeys.automaticTranslationEnabled)
             status = "已保存"
         } catch {
@@ -160,10 +207,11 @@ struct SettingsView: View {
     }
 
     private var isSuccessStatus: Bool {
-        status == "已保存" || status == "连接测试成功"
+        status == "已保存" || status == "连接测试成功" || status.hasPrefix("已获取")
     }
 
     private func testConnection() {
+        let providerToTest = provider
         let trimmedAPIURL = apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -179,13 +227,24 @@ struct SettingsView: View {
 
         Task { @MainActor in
             do {
-                let translator = OpenAITranslator()
-                _ = try await translator.translateToChinese(
-                    "Hello, this is a connection test.",
-                    apiURL: normalizedAPIURL,
-                    apiKey: trimmedAPIKey,
-                    model: trimmedModel
-                )
+                switch providerToTest {
+                case .openAICompatible:
+                    let translator = OpenAITranslator()
+                    _ = try await translator.translateToChinese(
+                        "Hello, this is a connection test.",
+                        apiURL: normalizedAPIURL,
+                        apiKey: trimmedAPIKey,
+                        model: trimmedModel
+                    )
+                case .anthropicNative:
+                    let translator = AnthropicTranslator()
+                    _ = try await translator.translateToChinese(
+                        "Hello, this is a connection test.",
+                        apiURL: normalizedAPIURL,
+                        apiKey: trimmedAPIKey,
+                        model: trimmedModel
+                    )
+                }
                 status = "连接测试成功"
             } catch {
                 status = "连接测试失败：\(error.localizedDescription)"
@@ -201,10 +260,122 @@ struct SettingsView: View {
         }
 
         do {
-            return try APIEndpointValidator.normalizedChatCompletionsURLString(from: apiURL)
+            switch provider {
+            case .openAICompatible:
+                return try APIEndpointValidator.normalizedChatCompletionsURLString(from: apiURL)
+            case .anthropicNative:
+                return try AnthropicTranslator.normalizedMessagesURLString(from: apiURL)
+            }
         } catch {
             status = error.localizedDescription
             return nil
+        }
+    }
+
+    private var providerURLSubtitle: String {
+        switch provider {
+        case .openAICompatible:
+            return "可填写 /v1，保存时会自动补全 /chat/completions"
+        case .anthropicNative:
+            return "可填写 /v1，保存时会自动补全 /messages"
+        }
+    }
+
+    private var providerModelSubtitle: String {
+        switch provider {
+        case .openAICompatible:
+            return "填写中转站支持的 OpenAI 兼容模型名"
+        case .anthropicNative:
+            return "填写 Anthropic 原生模型 ID"
+        }
+    }
+
+    private func loadSettings(for provider: TranslationProvider) {
+        modelFetchCounter += 1
+        isFetchingModels = false
+        apiURL = Self.savedAPIURL(for: provider)
+        model = Self.savedModel(for: provider)
+        apiKey = keychain.readAPIKey(for: provider) ?? ""
+        availableModels = []
+        status = ""
+        fetchModelsIfPossible()
+    }
+
+    private static func savedAPIURL(for provider: TranslationProvider) -> String {
+        UserDefaults.standard.string(forKey: SettingsKeys.apiURL(for: provider))
+            ?? legacySavedValue(for: provider, key: SettingsKeys.apiURL)
+            ?? provider.defaultAPIURL
+    }
+
+    private static func savedModel(for provider: TranslationProvider) -> String {
+        UserDefaults.standard.string(forKey: SettingsKeys.model(for: provider))
+            ?? legacySavedValue(for: provider, key: SettingsKeys.model)
+            ?? provider.defaultModel
+    }
+
+    private static func legacySavedValue(for provider: TranslationProvider, key: String) -> String? {
+        guard TranslationProvider.savedValue() == provider else {
+            return nil
+        }
+        return UserDefaults.standard.string(forKey: key)
+    }
+
+    private func fetchModelsIfPossible() {
+        guard !apiURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return
+        }
+
+        fetchModels()
+    }
+
+    private func fetchModels() {
+        modelFetchCounter += 1
+        let fetchID = modelFetchCounter
+        let providerToFetch = provider
+        let apiURLToFetch = apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiKeyToFetch = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !apiURLToFetch.isEmpty else {
+            status = "API URL 不能为空"
+            return
+        }
+        guard !apiKeyToFetch.isEmpty else {
+            status = "API Key 不能为空"
+            return
+        }
+
+        isFetchingModels = true
+        status = "正在获取模型列表..."
+
+        Task { @MainActor in
+            do {
+                let models = try await modelCatalog.fetchModels(
+                    provider: providerToFetch,
+                    apiURL: apiURLToFetch,
+                    apiKey: apiKeyToFetch
+                )
+
+                guard fetchID == modelFetchCounter, provider == providerToFetch else {
+                    return
+                }
+
+                availableModels = models
+                if !models.contains(where: { $0.id == model }), let firstModel = models.first {
+                    model = firstModel.id
+                }
+                status = "已获取 \(models.count) 个模型"
+            } catch {
+                guard fetchID == modelFetchCounter, provider == providerToFetch else {
+                    return
+                }
+                availableModels = []
+                status = "获取模型失败：\(error.localizedDescription)"
+            }
+            if fetchID == modelFetchCounter {
+                isFetchingModels = false
+            }
         }
     }
 }

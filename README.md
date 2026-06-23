@@ -10,11 +10,11 @@ macOS 全局划词翻译 MVP。选中文本后可以按 `⌥ Space` 手动翻译
 - 临时读取选区并恢复原剪贴板
 - 默认忽略空白、纯中文、纯数字、网址、长字母数字串和目录路径选区
 - 默认限制选区最多 2000 个字符，避免误发大段内容
-- 兼容 OpenAI Chat Completions 的 API 翻译为简体中文，可配置 HTTPS 中转站 URL
+- 支持 OpenAI 兼容 Chat Completions 和 Anthropic 原生 Messages API
 - API Key 保存到 macOS Keychain
 - 鼠标附近浮窗显示译文，可展开原文、复制译文、重试
 - 浮窗错误提示：未配置 API Key、未授权辅助功能、未检测到选区、请求失败
-- 设置页支持 API URL、API Key、模型配置和连接测试
+- 设置页支持 API URL、API Key、模型列表获取、模型下拉选择和连接测试
 
 ## 本地运行
 
@@ -26,9 +26,17 @@ swift run SelectionTranslator
 
 首次运行后，在菜单栏打开 `设置...`：
 
-1. 填入 API URL。默认是 `https://api.openai.com/v1/chat/completions`。使用中转站时可以填 HTTPS base URL，例如 `https://your-api.example.com/v1`，应用会自动补成 `/chat/completions`。
+1. 选择 Provider：
+   - `OpenAI 兼容`：用于 OpenAI 官方接口或兼容 `/v1/chat/completions` 的中转站。
+   - `Anthropic 原生`：用于 Anthropic Claude 原生 `/v1/messages` 接口。
+2. 填入 API URL：
+   - OpenAI 兼容默认是 `https://api.openai.com/v1/chat/completions`。使用中转站时可以填 HTTPS base URL，例如 `https://your-api.example.com/v1`，应用会自动补成 `/chat/completions`。
+   - Anthropic 原生默认是 `https://api.anthropic.com/v1/messages`。也可以填 `https://api.anthropic.com/v1`，应用会自动补成 `/messages`。
 2. 填入 API Key。
-3. 保留默认模型 `gpt-4.1-mini`，或改成你的可用模型。
+3. 点击 `获取模型`，应用会根据当前 Provider 和 API Key 拉取模型列表：
+   - OpenAI 兼容：请求 `/v1/models`，从返回的模型 `id` 中选择，例如 `gpt-4.1-mini`。
+   - Anthropic 原生：请求 `/v1/models`，从返回的模型 `id` 中选择，例如 `claude-opus-4-8`。
+   - 如果服务不支持模型列表，可以手动输入模型名。
 4. 如需拖选后自动翻译，显式开启 `自动划词翻译`。开启后，选中文本会发送到配置的 API 服务。
 5. 点击保存。
 6. 点击 `检查辅助功能权限`，在系统设置里允许本工具控制电脑。
@@ -79,6 +87,6 @@ README.md                             使用说明
 
 - 技术栈：Swift + SwiftUI + AppKit。
 - 选区读取：模拟 `Cmd+C`，读取剪贴板，再恢复原剪贴板内容。
-- 翻译引擎：兼容 OpenAI Chat Completions 的 API。
+- 翻译引擎：支持 OpenAI 兼容 Chat Completions，以及 Anthropic 原生 Messages API。
 - 翻译策略：保留代码、命令、路径、变量名、错误码、产品名和 URL，翻译自然语言说明。
 - 浮窗规则：弹出后 3 秒内未点击会自动关闭；点击浮窗后保持显示；`Esc` 可关闭；再次拖选或手动翻译会替换当前浮窗。
