@@ -9,8 +9,8 @@ macOS 全局划词翻译 MVP。选中文本后可以按 `⌥ Space` 手动翻译
 - `⌥ Space` 全局快捷键
 - 临时读取选区并恢复原剪贴板
 - 默认忽略空白、纯中文、纯数字、网址、长字母数字串和目录路径选区
-- 默认限制选区最多 2000 个字符，避免误发大段内容
-- 支持 OpenAI 兼容 Chat Completions 和 Anthropic 原生 Messages API
+- 支持大段文本翻译；自动划词翻译默认关闭，避免误发大段内容
+- 支持 OpenAI 兼容 Chat Completions、Anthropic 原生 Messages API 和 DeepLX
 - API Key 保存到 macOS Keychain
 - 鼠标附近浮窗显示译文，可展开原文、复制译文、重试
 - 浮窗错误提示：未配置 API Key、未授权辅助功能、未检测到选区、请求失败
@@ -26,20 +26,23 @@ swift run SelectionTranslator
 
 首次运行后，在菜单栏打开 `设置...`：
 
-1. 选择 Provider：
+1. 选择 `当前翻译服务`。应用只使用当前选中的服务；其他服务的配置会保留，但不会参与翻译：
    - `OpenAI 兼容`：用于 OpenAI 官方接口或兼容 `/v1/chat/completions` 的中转站。
    - `Anthropic 原生`：用于 Anthropic Claude 原生 `/v1/messages` 接口。
+   - `DeepLX`：用于自建或兼容 DeepLX 的 `/translate` 接口。
 2. 填入 API URL：
    - OpenAI 兼容默认是 `https://api.openai.com/v1/chat/completions`。使用中转站时可以填 HTTPS base URL，例如 `https://your-api.example.com/v1`，应用会自动补成 `/chat/completions`。
    - Anthropic 原生默认是 `https://api.anthropic.com/v1/messages`。也可以填 `https://api.anthropic.com/v1`，应用会自动补成 `/messages`。
-2. 填入 API Key。
-3. 点击 `获取模型`，应用会根据当前 Provider 和 API Key 拉取模型列表：
+   - DeepLX 默认是 `http://127.0.0.1:1188/translate`。本机自建服务可以用 HTTP；远程 DeepLX 地址必须使用 HTTPS，应用会自动补成 `/translate`。
+3. 填入 API Key。DeepLX 的 API Key 可留空；如果自建服务启用了 token，则填写 token。
+4. 点击 `获取模型`，应用会根据当前 Provider 和 API Key 拉取模型列表：
    - OpenAI 兼容：请求 `/v1/models`，从返回的模型 `id` 中选择，例如 `gpt-4.1-mini`。
    - Anthropic 原生：请求 `/v1/models`，从返回的模型 `id` 中选择，例如 `claude-opus-4-8`。
+   - DeepLX 不需要模型。
    - 如果服务不支持模型列表，可以手动输入模型名。
-4. 如需拖选后自动翻译，显式开启 `自动划词翻译`。开启后，选中文本会发送到配置的 API 服务。
-5. 点击保存。
-6. 点击 `检查辅助功能权限`，在系统设置里允许本工具控制电脑。
+5. 如需拖选后自动翻译，显式开启 `自动划词翻译`。开启后，选中文本会发送到当前翻译服务。
+6. 点击保存。
+7. 点击 `检查辅助功能权限`，在系统设置里允许本工具控制电脑。
 
 之后选中文本并按 `⌥ Space` 可手动翻译。若已开启自动划词翻译，在任意 App 中按住鼠标左键拖选可复制的英文文本，松开后会自动翻译。
 
@@ -87,6 +90,6 @@ README.md                             使用说明
 
 - 技术栈：Swift + SwiftUI + AppKit。
 - 选区读取：模拟 `Cmd+C`，读取剪贴板，再恢复原剪贴板内容。
-- 翻译引擎：支持 OpenAI 兼容 Chat Completions，以及 Anthropic 原生 Messages API。
+- 翻译引擎：支持 OpenAI 兼容 Chat Completions、Anthropic 原生 Messages API，以及 DeepLX `/translate`。
 - 翻译策略：保留代码、命令、路径、变量名、错误码、产品名和 URL，翻译自然语言说明。
 - 浮窗规则：弹出后 3 秒内未点击会自动关闭；点击浮窗后保持显示；`Esc` 可关闭；再次拖选或手动翻译会替换当前浮窗。

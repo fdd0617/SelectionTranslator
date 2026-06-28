@@ -10,6 +10,8 @@ enum SettingsKeys {
             return apiURL
         case .anthropicNative:
             return "anthropic_api_url"
+        case .deepLX:
+            return "deeplx_api_url"
         }
     }
 
@@ -19,6 +21,8 @@ enum SettingsKeys {
             return model
         case .anthropicNative:
             return "anthropic_model"
+        case .deepLX:
+            return "deeplx_model"
         }
     }
 }

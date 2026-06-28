@@ -34,18 +34,4 @@ final class SelectionContentFilterTests: XCTestCase {
     func testMixedChineseAndEnglishStillTranslates() {
         XCTAssertTrue(SelectionContentFilter.shouldTranslate("这个 error means the request failed"))
     }
-
-    func testLengthLimitAllowsReasonableTextAndRejectsOversizedText() {
-        let allowedText = String(repeating: "a", count: SelectionContentFilter.maximumTextLength)
-        let oversizedText = String(repeating: "a", count: SelectionContentFilter.maximumTextLength + 1)
-
-        XCTAssertTrue(SelectionContentFilter.isWithinLengthLimit(allowedText))
-        XCTAssertFalse(SelectionContentFilter.isWithinLengthLimit(oversizedText))
-    }
-
-    func testLengthLimitIgnoresSurroundingWhitespace() {
-        let text = "  \n" + String(repeating: "a", count: SelectionContentFilter.maximumTextLength) + "\n  "
-
-        XCTAssertTrue(SelectionContentFilter.isWithinLengthLimit(text))
-    }
 }

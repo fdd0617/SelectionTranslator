@@ -52,7 +52,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Selection Translator")
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    Text("配置翻译 Provider、模型和系统权限")
+                    Text("选择当前使用的翻译服务，并保留各服务配置")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
@@ -61,16 +61,22 @@ struct SettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                SettingsField(title: "Provider", subtitle: "选择 API 协议") {
-                    Picker("", selection: $provider) {
-                        ForEach(TranslationProvider.allCases) { provider in
-                            Text(provider.displayName).tag(provider)
+                SettingsField(title: "当前翻译服务", subtitle: "只使用当前选中的服务；其他配置会保留") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("", selection: $provider) {
+                            ForEach(TranslationProvider.allCases) { provider in
+                                Text(provider.displayName).tag(provider)
+                            }
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .onChange(of: provider) { newProvider in
-                        loadSettings(for: newProvider)
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .onChange(of: provider) { newProvider in
+                            loadSettings(for: newProvider)
+                        }
+
+                        Text("切换服务会加载该服务上次保存的 URL、Key 和模型，不会启用多个服务同时翻译。")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -79,40 +85,42 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                 }
 
-                SettingsField(title: "API Key", subtitle: "保存到 macOS Keychain") {
-                    SecureField("sk-...", text: $apiKey)
+                SettingsField(title: "API Key", subtitle: providerAPIKeySubtitle) {
+                    SecureField(providerAPIKeyPlaceholder, text: $apiKey)
                         .textFieldStyle(.roundedBorder)
                 }
 
-                SettingsField(title: "Model", subtitle: providerModelSubtitle) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 8) {
-                            if availableModels.isEmpty {
-                                TextField(provider.defaultModel, text: $model)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                Picker("", selection: $model) {
-                                    ForEach(availableModels) { model in
-                                        Text(model.displayName).tag(model.id)
+                if provider.supportsModelSelection {
+                    SettingsField(title: "Model", subtitle: providerModelSubtitle) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                if availableModels.isEmpty {
+                                    TextField(provider.defaultModel, text: $model)
+                                        .textFieldStyle(.roundedBorder)
+                                } else {
+                                    Picker("", selection: $model) {
+                                        ForEach(availableModels) { model in
+                                            Text(model.displayName).tag(model.id)
+                                        }
                                     }
+                                    .pickerStyle(.menu)
+                                    .labelsHidden()
                                 }
-                                .pickerStyle(.menu)
-                                .labelsHidden()
+
+                                Button {
+                                    fetchModels()
+                                } label: {
+                                    Label(isFetchingModels ? "获取中" : "获取模型", systemImage: isFetchingModels ? "hourglass" : "arrow.clockwise")
+                                }
+                                .buttonStyle(SettingsSecondaryButtonStyle())
+                                .disabled(isFetchingModels)
                             }
 
-                            Button {
-                                fetchModels()
-                            } label: {
-                                Label(isFetchingModels ? "获取中" : "获取模型", systemImage: isFetchingModels ? "hourglass" : "arrow.clockwise")
+                            if availableModels.isEmpty {
+                                Text("如果服务不支持模型列表，可以手动输入模型名。")
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(SettingsSecondaryButtonStyle())
-                            .disabled(isFetchingModels)
-                        }
-
-                        if availableModels.isEmpty {
-                            Text("如果服务不支持模型列表，可以手动输入模型名。")
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -192,7 +200,7 @@ struct SettingsView: View {
     private func save() {
         do {
             let trimmedAPIURL = apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedModel = provider.supportsModelSelection ? model.trimmingCharacters(in: .whitespacesAndNewlines) : provider.defaultModel
             guard let normalizedAPIURL = validatedAPIURLString(apiURL: trimmedAPIURL, model: trimmedModel) else { return }
 
             try keychain.saveAPIKey(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: provider)
@@ -214,10 +222,10 @@ struct SettingsView: View {
         let providerToTest = provider
         let trimmedAPIURL = apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModel = providerToTest.supportsModelSelection ? model.trimmingCharacters(in: .whitespacesAndNewlines) : providerToTest.defaultModel
 
         guard let normalizedAPIURL = validatedAPIURLString(apiURL: trimmedAPIURL, model: trimmedModel) else { return }
-        guard !trimmedAPIKey.isEmpty else {
+        guard !providerToTest.requiresAPIKey || !trimmedAPIKey.isEmpty else {
             status = "API Key 不能为空"
             return
         }
@@ -244,6 +252,13 @@ struct SettingsView: View {
                         apiKey: trimmedAPIKey,
                         model: trimmedModel
                     )
+                case .deepLX:
+                    let translator = DeepLXTranslator()
+                    _ = try await translator.translateToChinese(
+                        "Hello, this is a connection test.",
+                        apiURL: normalizedAPIURL,
+                        apiKey: trimmedAPIKey
+                    )
                 }
                 status = "连接测试成功"
             } catch {
@@ -254,7 +269,7 @@ struct SettingsView: View {
     }
 
     private func validatedAPIURLString(apiURL: String, model: String) -> String? {
-        guard !model.isEmpty else {
+        guard provider.supportsModelSelection == false || !model.isEmpty else {
             status = "Model 不能为空"
             return nil
         }
@@ -265,6 +280,8 @@ struct SettingsView: View {
                 return try APIEndpointValidator.normalizedChatCompletionsURLString(from: apiURL)
             case .anthropicNative:
                 return try AnthropicTranslator.normalizedMessagesURLString(from: apiURL)
+            case .deepLX:
+                return try DeepLXTranslator.normalizedTranslateURLString(from: apiURL)
             }
         } catch {
             status = error.localizedDescription
@@ -278,6 +295,28 @@ struct SettingsView: View {
             return "可填写 /v1，保存时会自动补全 /chat/completions"
         case .anthropicNative:
             return "可填写 /v1，保存时会自动补全 /messages"
+        case .deepLX:
+            return "可填写 DeepLX base URL，保存时会自动补全 /translate"
+        }
+    }
+
+    private var providerAPIKeySubtitle: String {
+        switch provider {
+        case .openAICompatible, .anthropicNative:
+            return "保存到 macOS Keychain"
+        case .deepLX:
+            return "可选；自建 DeepLX 如果启用 token 才需要填写"
+        }
+    }
+
+    private var providerAPIKeyPlaceholder: String {
+        switch provider {
+        case .openAICompatible:
+            return "sk-..."
+        case .anthropicNative:
+            return "sk-ant-..."
+        case .deepLX:
+            return "可留空"
         }
     }
 
@@ -287,6 +326,8 @@ struct SettingsView: View {
             return "填写中转站支持的 OpenAI 兼容模型名"
         case .anthropicNative:
             return "填写 Anthropic 原生模型 ID"
+        case .deepLX:
+            return "DeepLX 不需要模型"
         }
     }
 
@@ -321,7 +362,8 @@ struct SettingsView: View {
     }
 
     private func fetchModelsIfPossible() {
-        guard !apiURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        guard provider.supportsModelSelection,
+              !apiURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             return
@@ -337,6 +379,10 @@ struct SettingsView: View {
         let apiURLToFetch = apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let apiKeyToFetch = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        guard providerToFetch.supportsModelSelection else {
+            status = "\(providerToFetch.displayName) 不需要模型列表"
+            return
+        }
         guard !apiURLToFetch.isEmpty else {
             status = "API URL 不能为空"
             return

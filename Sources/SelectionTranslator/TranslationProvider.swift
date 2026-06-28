@@ -3,6 +3,7 @@ import Foundation
 enum TranslationProvider: String, CaseIterable, Identifiable {
     case openAICompatible = "openai_compatible"
     case anthropicNative = "anthropic_native"
+    case deepLX = "deeplx"
 
     var id: String { rawValue }
 
@@ -12,6 +13,8 @@ enum TranslationProvider: String, CaseIterable, Identifiable {
             return "OpenAI 兼容"
         case .anthropicNative:
             return "Anthropic 原生"
+        case .deepLX:
+            return "DeepLX"
         }
     }
 
@@ -21,6 +24,8 @@ enum TranslationProvider: String, CaseIterable, Identifiable {
             return OpenAITranslator.defaultAPIURL
         case .anthropicNative:
             return AnthropicTranslator.defaultAPIURL
+        case .deepLX:
+            return DeepLXTranslator.defaultAPIURL
         }
     }
 
@@ -30,6 +35,26 @@ enum TranslationProvider: String, CaseIterable, Identifiable {
             return OpenAITranslator.defaultModel
         case .anthropicNative:
             return AnthropicTranslator.defaultModel
+        case .deepLX:
+            return DeepLXTranslator.defaultModel
+        }
+    }
+
+    var requiresAPIKey: Bool {
+        switch self {
+        case .openAICompatible, .anthropicNative:
+            return true
+        case .deepLX:
+            return false
+        }
+    }
+
+    var supportsModelSelection: Bool {
+        switch self {
+        case .openAICompatible, .anthropicNative:
+            return true
+        case .deepLX:
+            return false
         }
     }
 

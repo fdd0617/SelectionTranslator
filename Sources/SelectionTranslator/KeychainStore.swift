@@ -72,6 +72,8 @@ final class KeychainStore {
             return account
         case .anthropicNative:
             return "anthropic_api_key"
+        case .deepLX:
+            return "deeplx_api_key"
         }
     }
 

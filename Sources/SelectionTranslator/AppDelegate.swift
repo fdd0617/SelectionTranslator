@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let selectionReader = SelectionReader()
     private let openAITranslator = OpenAITranslator()
     private let anthropicTranslator = AnthropicTranslator()
+    private let deepLXTranslator = DeepLXTranslator()
     private let panelController = FloatingPanelController()
     private var menuBarController: MenuBarController?
     private var settingsWindowController: SettingsWindowController?
@@ -70,7 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             let provider = TranslationProvider.savedValue()
 
-            guard let apiKey = keychain.readAPIKey(for: provider), !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let apiKey = keychain.readAPIKey(for: provider) ?? ""
+            guard !provider.requiresAPIKey || !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 if isAutomatic { return }
                 panelController.showError(
                     message: "请先配置 API Key",
@@ -92,19 +94,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     retryText = selectedText
                 }
                 try Task.checkCancellation()
-
-                guard SelectionContentFilter.isWithinLengthLimit(selectedText) else {
-                    if !isAutomatic {
-                        let characterCount = selectedText.trimmingCharacters(in: .whitespacesAndNewlines).count
-                        panelController.showError(
-                            message: "选区过长",
-                            detail: "当前选区约 \(characterCount) 个字符，最多支持 \(SelectionContentFilter.maximumTextLength) 个字符。请缩短选区后重试。",
-                            actionTitle: nil,
-                            action: nil
-                        )
-                    }
-                    return
-                }
 
                 guard SelectionContentFilter.shouldTranslate(selectedText) else {
                     return
@@ -140,6 +129,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         apiURL: apiURL,
                         apiKey: apiKey,
                         model: model
+                    )
+                case .deepLX:
+                    translatedText = try await deepLXTranslator.translateToChinese(
+                        selectedText,
+                        apiURL: apiURL,
+                        apiKey: apiKey
                     )
                 }
                 try Task.checkCancellation()

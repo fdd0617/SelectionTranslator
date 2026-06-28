@@ -44,6 +44,8 @@ final class ModelCatalog {
             return try await fetchOpenAICompatibleModels(apiURL: apiURL, apiKey: apiKey)
         case .anthropicNative:
             return try await fetchAnthropicModels(apiURL: apiURL, apiKey: apiKey)
+        case .deepLX:
+            return []
         }
     }
 

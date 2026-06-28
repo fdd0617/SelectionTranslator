@@ -53,4 +53,24 @@ final class APIEndpointValidatorTests: XCTestCase {
 
         XCTAssertEqual(url.absoluteString, "https://api.anthropic.com/v1/models")
     }
+
+    func testNormalizesLocalDeepLXTranslateEndpointFromBaseURL() throws {
+        let url = try DeepLXTranslator.normalizedTranslateURLString(from: "http://127.0.0.1:1188")
+
+        XCTAssertEqual(url, "http://127.0.0.1:1188/translate")
+    }
+
+    func testKeepsExistingDeepLXTranslateEndpoint() throws {
+        let url = try DeepLXTranslator.normalizedTranslateURLString(from: "https://deeplx.example.com/translate")
+
+        XCTAssertEqual(url, "https://deeplx.example.com/translate")
+    }
+
+    func testRejectsRemotePlainHTTPDeepLXEndpoint() {
+        XCTAssertThrowsError(try DeepLXTranslator.normalizedTranslateURLString(from: "http://deeplx.example.com")) { error in
+            guard case DeepLXTranslatorError.insecureURL = error else {
+                return XCTFail("Expected insecureURL, got \(error)")
+            }
+        }
+    }
 }

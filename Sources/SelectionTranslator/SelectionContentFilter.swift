@@ -1,8 +1,6 @@
 import Foundation
 
 enum SelectionContentFilter {
-    static let maximumTextLength = 2_000
-
     static func shouldTranslate(_ text: String) -> Bool {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else {
@@ -30,10 +28,6 @@ enum SelectionContentFilter {
         }
 
         return true
-    }
-
-    static func isWithinLengthLimit(_ text: String) -> Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).count <= maximumTextLength
     }
 
     private static func isURL(_ text: String) -> Bool {
